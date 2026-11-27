@@ -302,6 +302,38 @@ def log_eval_rollout_data(rollout_id, args, data, extra_metrics) -> bool:
 
 Return `True` to suppress Miles's default logging, `False` to layer on top.
 
+### Checkpoint traces
+
+The built-in eval log hook `miles.utils.tracking_utils.checkpoint_traces.log_eval_traces`
+writes a few readable traces of one eval dataset at every eval, so you can read how the
+model's answers change checkpoint by checkpoint. Each sample becomes one JSON line with
+`step`, `dataset`, `prompt_id`, `prompt`, `response`, `expected`, `reward`,
+`response_length`, `truncated` and `status`, in
+`<dir>/step_<rollout_id>.jsonl` (zero-padded to six digits). The eval before training
+goes to `<dir>/baseline.jsonl`. With `--use-mlflow`, the same rows are appended to the
+run's MLflow table `traces/<dataset>.json`. The hook never fails the run: an upload that
+errors or runs past its timeout is logged and skipped. It returns `False`, so the
+default eval metrics are still logged.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--checkpoint-traces-dir` | unset | Output folder; without it the hook writes nothing |
+| `--checkpoint-traces-dataset` | `probe` | Eval dataset to trace; other datasets are ignored |
+| `--checkpoint-traces-mlflow-timeout` | `10.0` | Seconds an eval waits for the MLflow upload |
+
+A small fixed probe set, decoded greedily, makes the traces comparable across steps:
+
+```bash
+--eval-interval 2 \
+--eval-prompt-data probe /path/gsm8k/test.parquet@[0:16] \
+--eval-temperature 0 \
+--custom-eval-rollout-log-function-path miles.utils.tracking_utils.checkpoint_traces.log_eval_traces \
+--checkpoint-traces-dir /path/run/traces
+```
+
+This complements `--dump-details`, which saves full rollouts for debugging. The traces
+keep only readable text and scores, never token ids or log-probs.
+
 ---
 
 ## Model
