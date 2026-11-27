@@ -6,27 +6,54 @@ from typing import Any
 from typing_extensions import Self
 
 from miles.utils.tracking_utils.checkpoint_traces.record import TraceRecord
+from miles.utils.tracking_utils.checkpoint_traces.step import TraceStep
 
-_COLUMNS = ("step", "prompt_id", "prompt", "response", "expected", "reward", "response_length", "truncated")
 
+class MlflowTraceSink:
+    """TraceSink strategy logging each record as one single-span MLflow trace linked to the run."""
 
-class MlflowTableSink:
-    """TraceSink strategy appending each eval step's records to one long MLflow table of the run."""
-
-    def __init__(self, *, run_id: str, dataset: str) -> None:
+    def __init__(self, *, run_id: str) -> None:
         self._run_id = run_id
-        self._artifact_file = f"traces/{dataset}.json"
 
     @classmethod
-    def for_active_run(cls, *, dataset: str) -> Self:
+    def for_active_run(cls) -> Self:
         """Bind to the calling thread's active MLflow run, since MLflow keeps the active run per thread."""
         if (run := _mlflow().active_run()) is None:
             raise RuntimeError("--use-mlflow is set but there is no active MLflow run")
-        return cls(run_id=run.info.run_id, dataset=dataset)
+        return cls(run_id=run.info.run_id)
 
-    def publish(self, *, step: int, records: Sequence[TraceRecord]) -> None:
-        """Append ``records`` to the run's trace table."""
-        _mlflow().log_table(data=_to_columns(records), artifact_file=self._artifact_file, run_id=self._run_id)
+    def publish(self, *, step: TraceStep, records: Sequence[TraceRecord]) -> None:
+        """Log one trace per record and wait until MLflow has exported them."""
+        mlflow = _mlflow()
+        for record in records:
+            with mlflow.start_span(name=f"{record.dataset}/{record.prompt_id}", run_id=self._run_id) as span:
+                span.set_inputs({"prompt": record.prompt})
+                span.set_outputs(record.response)
+                if record.expected is not None:
+                    span.set_attributes({"expected": record.expected})
+                mlflow.update_current_trace(tags=trace_tags(record))
+        mlflow.flush_trace_async_logging()
+
+
+def trace_tags(record: TraceRecord) -> dict[str, str]:
+    """Return the string tags that make a record's trace filterable in the MLflow UI."""
+    return {
+        "step": str(record.step),
+        "prompt_id": str(record.prompt_id),
+        "dataset": record.dataset,
+        "reward": _reward_tag(record.reward),
+        "truncated": str(record.truncated).lower(),
+        "status": record.status,
+    }
+
+
+def _reward_tag(reward: float | dict[str, Any] | None) -> str:
+    """Render a reward as tag text: a number as is, a dict as JSON, a missing reward as ``none``."""
+    if reward is None:
+        return "none"
+    if isinstance(reward, dict):
+        return json.dumps(reward, ensure_ascii=False)
+    return str(reward)
 
 
 def _mlflow() -> ModuleType:
@@ -35,16 +62,3 @@ def _mlflow() -> ModuleType:
     import mlflow
 
     return mlflow
-
-
-def _to_columns(records: Sequence[TraceRecord]) -> dict[str, list[Any]]:
-    """Lay ``records`` out as table columns, with structured cells as JSON text so every column is uniform."""
-    rows = [record.to_dict() for record in records]
-    return {column: [_to_cell(row[column]) for row in rows] for column in _COLUMNS}
-
-
-def _to_cell(value: Any) -> Any:
-    """Keep scalars and turn lists and dicts into JSON text."""
-    if isinstance(value, list | dict):
-        return json.dumps(value, ensure_ascii=False)
-    return value

@@ -6,6 +6,7 @@ from typing import Any
 
 from miles.utils.args.custom_view import ImmutableNamespace
 from miles.utils.tracking_utils.checkpoint_traces.record import TraceRecord
+from miles.utils.tracking_utils.checkpoint_traces.step import TraceStep
 from miles.utils.types import Sample
 
 TRACE_FIELDS = {
@@ -73,9 +74,9 @@ class RecordingSink:
     """Trace sink that remembers every published batch."""
 
     def __init__(self) -> None:
-        self.published: list[tuple[int, list[TraceRecord]]] = []
+        self.published: list[tuple[TraceStep, list[TraceRecord]]] = []
 
-    def publish(self, *, step: int, records: Sequence[TraceRecord]) -> None:
+    def publish(self, *, step: TraceStep, records: Sequence[TraceRecord]) -> None:
         """Remember the batch."""
         self.published.append((step, list(records)))
 
@@ -83,7 +84,7 @@ class RecordingSink:
 class RaisingSink:
     """Trace sink whose upload always fails."""
 
-    def publish(self, *, step: int, records: Sequence[TraceRecord]) -> None:
+    def publish(self, *, step: TraceStep, records: Sequence[TraceRecord]) -> None:
         """Fail the upload."""
         raise RuntimeError("upload failed")
 
@@ -95,7 +96,7 @@ class BlockingSink:
         self.started = 0
         self.release = threading.Event()
 
-    def publish(self, *, step: int, records: Sequence[TraceRecord]) -> None:
+    def publish(self, *, step: TraceStep, records: Sequence[TraceRecord]) -> None:
         """Hang until released."""
         self.started += 1
         self.release.wait(timeout=10.0)

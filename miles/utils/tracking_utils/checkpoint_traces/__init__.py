@@ -1,4 +1,4 @@
-"""Readable per-eval traces of one eval dataset, written as JSONL and logged as an MLflow table.
+"""Readable per-eval traces of one eval dataset, written as JSONL and logged as MLflow traces.
 
 Use as ``--custom-eval-rollout-log-function-path miles.utils.tracking_utils.checkpoint_traces.log_eval_traces``.
 """

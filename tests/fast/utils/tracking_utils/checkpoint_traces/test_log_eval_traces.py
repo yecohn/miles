@@ -19,6 +19,7 @@ from miles.utils.tracking_utils.checkpoint_traces.best_effort import BackgroundU
 from miles.utils.tracking_utils.checkpoint_traces.config import CheckpointTracesConfig
 from miles.utils.tracking_utils.checkpoint_traces.hook import CheckpointTracesHook
 from miles.utils.tracking_utils.checkpoint_traces.sink import TraceSink
+from miles.utils.tracking_utils.checkpoint_traces.step import TraceStep
 from miles.utils.types import Sample
 
 
@@ -84,17 +85,21 @@ class TestTraceRows:
 
 class TestBaseline:
     def test_first_step_zero_of_a_fresh_run_is_the_baseline(self, tmp_path: Path) -> None:
-        """The pre-training eval lands in baseline.jsonl; a later step-0 eval gets its own step file."""
-        data = make_eval_data({"probe": [make_sample(0)]})
+        """The pre-training eval lands in baseline.jsonl as step -1; the eval after step 0 keeps step 0."""
+        sink = RecordingSink()
+        hook = CheckpointTracesHook(remote_sink=lambda args: sink)
 
-        log_eval_traces(0, make_args(tmp_path), data, None)
+        hook(0, make_args(tmp_path), make_eval_data({"probe": [make_sample(0)]}), None)
         baseline = (tmp_path / "baseline.jsonl").read_text(encoding="utf-8")
-        log_eval_traces(0, make_args(tmp_path), make_eval_data({"probe": [make_sample(0, response="x")]}), None)
+        hook(0, make_args(tmp_path), make_eval_data({"probe": [make_sample(0, response="x")]}), None)
 
         assert sorted(p.name for p in tmp_path.iterdir()) == ["baseline.jsonl", "step_000000.jsonl"]
         assert (tmp_path / "baseline.jsonl").read_text(encoding="utf-8") == baseline
-        assert read_jsonl(tmp_path / "baseline.jsonl")[0]["step"] == 0
+        assert [row["step"] for row in read_jsonl(tmp_path / "baseline.jsonl")] == [-1]
+        assert read_jsonl(tmp_path / "step_000000.jsonl")[0]["step"] == 0
         assert read_jsonl(tmp_path / "step_000000.jsonl")[0]["response"] == "x"
+        assert [[record.step for record in records] for _, records in sink.published] == [[-1], [0]]
+        assert [step.step for step, _ in sink.published] == [-1, 0]
 
     def test_unresolved_start_step_counts_as_a_fresh_run(self, tmp_path: Path) -> None:
         """The rollout manager sees no start step unless the flag was passed; the first eval is still the baseline."""
@@ -103,6 +108,7 @@ class TestBaseline:
         log_eval_traces(0, args, make_eval_data({"probe": [make_sample(0)]}), None)
 
         assert sorted(p.name for p in tmp_path.iterdir()) == ["baseline.jsonl"]
+        assert read_jsonl(tmp_path / "baseline.jsonl")[0]["step"] == -1
 
     def test_trace_files_are_readable_by_other_users(self, tmp_path: Path) -> None:
         """Trace files take the process umask, so others on a shared run folder can read them."""
@@ -120,6 +126,7 @@ class TestBaseline:
         log_eval_traces(0, make_args(tmp_path, **overrides), make_eval_data({"probe": [make_sample(0)]}), None)
 
         assert sorted(p.name for p in tmp_path.iterdir()) == ["step_000000.jsonl"]
+        assert read_jsonl(tmp_path / "step_000000.jsonl")[0]["step"] == 0
 
 
 class TestBestEffort:
@@ -155,7 +162,8 @@ class TestBestEffort:
         hook(5, make_args(tmp_path), make_eval_data({"probe": [make_sample(0), make_sample(1)]}), None)
 
         [(step, records)] = sink.published
-        assert step == 5
+        assert step == TraceStep(step=5, file_name="step_000005.jsonl")
+        assert [record.step for record in records] == [5, 5]
         assert [record.prompt_id for record in records] == [0, 1]
 
     def test_remote_upload_is_skipped_without_mlflow(self, tmp_path: Path) -> None:

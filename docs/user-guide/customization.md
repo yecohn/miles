@@ -310,10 +310,13 @@ model's answers change checkpoint by checkpoint. Each sample becomes one JSON li
 `step`, `dataset`, `prompt_id`, `prompt`, `response`, `expected`, `reward`,
 `response_length`, `truncated` and `status`, in
 `<dir>/step_<rollout_id>.jsonl` (zero-padded to six digits). The eval before training
-goes to `<dir>/baseline.jsonl`. With `--use-mlflow`, the same rows are appended to the
-run's MLflow table `traces/<dataset>.json`. The hook never fails the run: an upload that
-errors or runs past its timeout is logged and skipped. It returns `False`, so the
-default eval metrics are still logged.
+goes to `<dir>/baseline.jsonl`, and its records and traces carry `step` -1, because
+miles numbers both the eval before training and the eval after the first step as
+rollout 0. With `--use-mlflow`, each sample also becomes one trace in the run's Traces
+tab, tagged `step`, `prompt_id`, `dataset`, `reward`, `truncated` and `status`; filter
+e.g. `tags.step = '3'`. The hook never fails the run: an upload that errors or runs past
+its timeout is logged and skipped. It returns `False`, so the default eval metrics are
+still logged.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -330,6 +333,16 @@ A small fixed probe set, decoded greedily, makes the traces comparable across st
 --custom-eval-rollout-log-function-path miles.utils.tracking_utils.checkpoint_traces.log_eval_traces \
 --checkpoint-traces-dir /path/run/traces
 ```
+
+- Greedy decoding alone may not make answers bit-identical across evals: concurrent
+  batching can flip near-tie tokens. In one run with 16 prompts and no intended weight
+  change, the number of correct answers varied between 2 and 4. Add
+  `--sglang-enable-deterministic-inference` for probe runs if the engine supports it;
+  otherwise treat small differences as noise.
+- A probe is only useful if answers finish. Watch `eval/<dataset>-truncated_ratio` and
+  raise `--eval-max-response-len` until it is near zero; thinking models need far more
+  than 512 tokens. Disabling thinking via `--apply-chat-template-kwargs` also changes
+  training.
 
 This complements `--dump-details`, which saves full rollouts for debugging. The traces
 keep only readable text and scores, never token ids or log-probs.

@@ -14,5 +14,5 @@ class CheckpointTracesConfig(BaseConfig):
     ] = "probe"
     checkpoint_traces_mlflow_timeout: A[
         float,
-        Arg(help="Seconds an eval waits for the MLflow trace-table upload before moving on."),
+        Arg(help="Seconds an eval waits for the MLflow trace upload before moving on."),
     ] = 10.0

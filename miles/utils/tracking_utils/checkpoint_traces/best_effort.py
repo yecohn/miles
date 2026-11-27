@@ -5,6 +5,7 @@ from functools import partial
 
 from miles.utils.tracking_utils.checkpoint_traces.record import TraceRecord
 from miles.utils.tracking_utils.checkpoint_traces.sink import TraceSink
+from miles.utils.tracking_utils.checkpoint_traces.step import TraceStep
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +36,13 @@ class BestEffortSink:
         self._timeout = timeout
         self._uploads = uploads
 
-    def publish(self, *, step: int, records: Sequence[TraceRecord]) -> None:
+    def publish(self, *, step: TraceStep, records: Sequence[TraceRecord]) -> None:
         """Publish through the inner sink in the background, waiting at most the timeout."""
         self._uploads.run(partial(self._publish_logging_errors, step=step, records=records), timeout=self._timeout)
 
-    def _publish_logging_errors(self, *, step: int, records: Sequence[TraceRecord]) -> None:
+    def _publish_logging_errors(self, *, step: TraceStep, records: Sequence[TraceRecord]) -> None:
         """Publish through the inner sink, logging instead of raising on failure."""
         try:
             self._inner.publish(step=step, records=records)
         except Exception:
-            logger.warning(f"checkpoint traces: upload of step {step} failed", exc_info=True)
+            logger.warning(f"checkpoint traces: upload of step {step.step} failed", exc_info=True)
