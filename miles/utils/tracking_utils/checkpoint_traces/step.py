@@ -1,15 +1,22 @@
 from dataclasses import dataclass
 
 BASELINE_STEP = -1
-BASELINE_FILE_NAME = "baseline.jsonl"
 
 
 @dataclass(frozen=True)
 class TraceStep:
-    """Where one eval's traces go: the step its records carry and the JSONL file they are written to."""
+    """One eval's place in the run: the step its records carry and the label naming its file and version."""
 
     step: int
-    file_name: str
+    label: str
+
+    @property
+    def file_name(self) -> str:
+        """Return the JSONL file name of this eval."""
+        return f"{self.label}.jsonl"
+
+
+BASELINE = TraceStep(step=BASELINE_STEP, label="baseline")
 
 
 def trace_step(
@@ -22,5 +29,5 @@ def trace_step(
     resolves it later, and only the driver sees the result. An unset value is therefore read as a fresh run."""
     is_pre_training_eval = rollout_id == 0 and not start_rollout_id and not skip_eval_before_train
     if is_pre_training_eval and not baseline_exists:
-        return TraceStep(step=BASELINE_STEP, file_name=BASELINE_FILE_NAME)
-    return TraceStep(step=rollout_id, file_name=f"step_{rollout_id:06d}.jsonl")
+        return BASELINE
+    return TraceStep(step=rollout_id, label=f"step_{rollout_id:06d}")

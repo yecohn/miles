@@ -323,6 +323,15 @@ still logged.
 | `--checkpoint-traces-dir` | unset | Output folder; without it the hook writes nothing |
 | `--checkpoint-traces-dataset` | `probe` | Eval dataset to trace; other datasets are ignored |
 | `--checkpoint-traces-mlflow-timeout` | `10.0` | Seconds an eval waits for the MLflow upload |
+| `--checkpoint-traces-mlflow-versions` | off | Group each eval's traces under one MLflow version per step |
+
+With `--checkpoint-traces-mlflow-versions`, each eval step gets one MLflow logged model,
+named like its JSONL file (`baseline`, `step_000003`) and linked to the run. It holds
+that step's traces and the scores `<dataset>/reward` (mean reward, a missing reward
+counted as 0, skipped when rewards are dicts) and `<dataset>/truncated_ratio`. These
+versions are placeholders without weights, tagged `weights: not saved`. MLflow also
+logs the two scores as run metrics under the same keys, and re-running a step adds its
+traces to the existing version.
 
 A small fixed probe set, decoded greedily, makes the traces comparable across steps:
 

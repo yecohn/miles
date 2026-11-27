@@ -10,7 +10,7 @@ from miles.utils.tracking_utils.checkpoint_traces.jsonl_sink import JsonlTraceSi
 from miles.utils.tracking_utils.checkpoint_traces.mlflow_sink import MlflowTraceSink
 from miles.utils.tracking_utils.checkpoint_traces.record import TraceRecord
 from miles.utils.tracking_utils.checkpoint_traces.sink import TraceSink
-from miles.utils.tracking_utils.checkpoint_traces.step import BASELINE_FILE_NAME, TraceStep, trace_step
+from miles.utils.tracking_utils.checkpoint_traces.step import BASELINE, TraceStep, trace_step
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def _trace_step(*, rollout_id: int, args: ImmutableNamespace, directory: Path) -
         rollout_id=rollout_id,
         start_rollout_id=args.start_rollout_id,
         skip_eval_before_train=args.skip_eval_before_train,
-        baseline_exists=(directory / BASELINE_FILE_NAME).exists(),
+        baseline_exists=(directory / BASELINE.file_name).exists(),
     )
 
 
@@ -75,7 +75,9 @@ def _best_effort_mlflow_sink(args: ImmutableNamespace) -> TraceSink | None:
     if not args.use_mlflow:
         return None
     return BestEffortSink(
-        inner=MlflowTraceSink.for_active_run(),
+        inner=MlflowTraceSink.for_active_run(
+            dataset=args.checkpoint_traces_dataset, versions=args.checkpoint_traces_mlflow_versions
+        ),
         timeout=args.checkpoint_traces_mlflow_timeout,
         uploads=_MLFLOW_UPLOADS,
     )

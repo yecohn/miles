@@ -16,3 +16,7 @@ class CheckpointTracesConfig(BaseConfig):
         float,
         Arg(help="Seconds an eval waits for the MLflow trace upload before moving on."),
     ] = 10.0
+    checkpoint_traces_mlflow_versions: A[
+        bool,
+        Arg(help="Group each eval's MLflow traces under one MLflow logged model per step, with its probe scores."),
+    ] = False

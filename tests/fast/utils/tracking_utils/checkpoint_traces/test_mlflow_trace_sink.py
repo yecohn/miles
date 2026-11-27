@@ -1,6 +1,4 @@
 import threading
-from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -14,28 +12,10 @@ from miles.utils.types import Sample
 mlflow = pytest.importorskip("mlflow")
 
 
-@pytest.fixture
-def mlflow_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
-    """Run an MLflow run against a throwaway local SQLite store, restoring MLflow's global state afterwards."""
-    # synchronous export: each async flush waits out the exporter's 1 s queue poll, too slow for a fast test
-    monkeypatch.setenv("MLFLOW_ENABLE_ASYNC_TRACE_LOGGING", "false")
-    previous_uri = mlflow.get_tracking_uri()
-    mlflow.set_tracking_uri(f"sqlite:///{tmp_path}/mlflow.db")
-    try:
-        experiment_id = mlflow.create_experiment("traces", artifact_location=(tmp_path / "artifacts").as_uri())
-        with mlflow.start_run(experiment_id=experiment_id) as run:
-            yield run
-    finally:
-        mlflow.flush_trace_async_logging()
-        while mlflow.active_run() is not None:
-            mlflow.end_run()
-        mlflow.set_tracking_uri(previous_uri)
-
-
 def _publish(sink: MlflowTraceSink, *, step: int, samples: list[Sample]) -> None:
     """Publish ``samples`` of one probe eval at ``step``."""
     records = [TraceRecord.from_sample(sample, step=step, dataset="probe") for sample in samples]
-    sink.publish(step=TraceStep(step=step, file_name=f"step_{step:06d}.jsonl"), records=records)
+    sink.publish(step=TraceStep(step=step, label=f"step_{step:06d}"), records=records)
 
 
 def _search(run: Any, filter_string: str | None = None) -> list[Any]:
@@ -47,7 +27,7 @@ def _search(run: Any, filter_string: str | None = None) -> list[Any]:
 
 def test_one_tagged_trace_per_record(mlflow_run: Any) -> None:
     """Each record becomes one single-span trace of the run, filterable by step and prompt."""
-    sink = MlflowTraceSink.for_active_run()
+    sink = MlflowTraceSink.for_active_run(dataset="probe", versions=False)
 
     _publish(sink, step=0, samples=[make_sample(0), make_sample(1)])
     _publish(sink, step=2, samples=[make_sample(0), make_sample(1)])
@@ -79,7 +59,7 @@ def test_structured_and_missing_values_of_a_baseline_eval(mlflow_run: Any) -> No
         make_sample(1, reward=None, label=None, status=Sample.Status.TRUNCATED),
     ]
 
-    _publish(MlflowTraceSink.for_active_run(), step=BASELINE_STEP, samples=samples)
+    _publish(MlflowTraceSink.for_active_run(dataset="probe", versions=False), step=BASELINE_STEP, samples=samples)
 
     by_prompt = {trace.info.tags["prompt_id"]: trace for trace in _search(mlflow_run, "tags.step = '-1'")}
     assert sorted(by_prompt) == ["0", "1"]
@@ -92,7 +72,7 @@ def test_structured_and_missing_values_of_a_baseline_eval(mlflow_run: Any) -> No
 
 def test_publish_from_another_thread_links_to_the_run_and_keeps_it_running(mlflow_run: Any) -> None:
     """The hook uploads on a worker thread with no active run; traces still reach the run, which stays open."""
-    sink = MlflowTraceSink.for_active_run()
+    sink = MlflowTraceSink.for_active_run(dataset="probe", versions=False)
     worker = threading.Thread(target=lambda: _publish(sink, step=3, samples=[make_sample(0)]))
 
     worker.start()

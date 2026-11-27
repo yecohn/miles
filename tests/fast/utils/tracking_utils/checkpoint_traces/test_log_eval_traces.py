@@ -19,7 +19,7 @@ from miles.utils.tracking_utils.checkpoint_traces.best_effort import BackgroundU
 from miles.utils.tracking_utils.checkpoint_traces.config import CheckpointTracesConfig
 from miles.utils.tracking_utils.checkpoint_traces.hook import CheckpointTracesHook
 from miles.utils.tracking_utils.checkpoint_traces.sink import TraceSink
-from miles.utils.tracking_utils.checkpoint_traces.step import TraceStep
+from miles.utils.tracking_utils.checkpoint_traces.step import TraceStep, trace_step
 from miles.utils.types import Sample
 
 
@@ -120,6 +120,14 @@ class TestBaseline:
 
         assert (tmp_path / "step_000001.jsonl").stat().st_mode & 0o777 == 0o644
 
+    def test_file_name_derives_from_the_step_label(self) -> None:
+        """The label is the one name of a step; its JSONL file is the label plus the extension."""
+        baseline = trace_step(rollout_id=0, start_rollout_id=None, skip_eval_before_train=False, baseline_exists=False)
+        later = trace_step(rollout_id=3, start_rollout_id=None, skip_eval_before_train=False, baseline_exists=True)
+
+        assert (baseline.step, baseline.label, baseline.file_name) == (-1, "baseline", "baseline.jsonl")
+        assert (later.step, later.label, later.file_name) == (3, "step_000003", "step_000003.jsonl")
+
     @pytest.mark.parametrize("overrides", [{"skip_eval_before_train": True}, {"start_rollout_id": 3}])
     def test_no_baseline_without_an_eval_before_training(self, tmp_path: Path, overrides: dict) -> None:
         """Runs that skip the pre-training eval, or resume, never produce a baseline file."""
@@ -162,7 +170,7 @@ class TestBestEffort:
         hook(5, make_args(tmp_path), make_eval_data({"probe": [make_sample(0), make_sample(1)]}), None)
 
         [(step, records)] = sink.published
-        assert step == TraceStep(step=5, file_name="step_000005.jsonl")
+        assert step == TraceStep(step=5, label="step_000005")
         assert [record.step for record in records] == [5, 5]
         assert [record.prompt_id for record in records] == [0, 1]
 

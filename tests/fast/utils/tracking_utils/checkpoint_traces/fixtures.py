@@ -58,6 +58,7 @@ def make_args(traces_dir: Path | str | None, **overrides: Any) -> ImmutableNames
         "checkpoint_traces_dir": None if traces_dir is None else str(traces_dir),
         "checkpoint_traces_dataset": "probe",
         "checkpoint_traces_mlflow_timeout": 0.2,
+        "checkpoint_traces_mlflow_versions": False,
         "use_mlflow": False,
         "start_rollout_id": 0,
         "skip_eval_before_train": False,
