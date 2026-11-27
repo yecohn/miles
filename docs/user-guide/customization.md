@@ -302,6 +302,60 @@ def log_eval_rollout_data(rollout_id, args, data, extra_metrics) -> bool:
 
 Return `True` to suppress Miles's default logging, `False` to layer on top.
 
+### Checkpoint traces
+
+The built-in eval log hook `miles.utils.tracking_utils.checkpoint_traces.log_eval_traces`
+writes a few readable traces of one eval dataset at every eval, so you can read how the
+model's answers change checkpoint by checkpoint. Each sample becomes one JSON line with
+`step`, `dataset`, `prompt_id`, `prompt`, `response`, `expected`, `reward`,
+`response_length`, `truncated` and `status`, in
+`<dir>/step_<rollout_id>.jsonl` (zero-padded to six digits). The eval before training
+goes to `<dir>/baseline.jsonl`, and its records and traces carry `step` -1, because
+miles numbers both the eval before training and the eval after the first step as
+rollout 0. With `--use-mlflow`, each sample also becomes one trace in the run's Traces
+tab, tagged `step`, `prompt_id`, `dataset`, `reward`, `truncated` and `status`; filter
+e.g. `tags.step = '3'`. The hook never fails the run: an upload that errors or runs past
+its timeout is logged and skipped. It returns `False`, so the default eval metrics are
+still logged.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--checkpoint-traces-dir` | unset | Output folder; without it the hook writes nothing |
+| `--checkpoint-traces-dataset` | `probe` | Eval dataset to trace; other datasets are ignored |
+| `--checkpoint-traces-mlflow-timeout` | `10.0` | Seconds an eval waits for the MLflow upload |
+| `--checkpoint-traces-mlflow-versions` | off | Group each eval's traces under one MLflow version per step |
+
+With `--checkpoint-traces-mlflow-versions`, each eval step gets one MLflow logged model,
+named like its JSONL file (`baseline`, `step_000003`) and linked to the run. It holds
+that step's traces and the scores `<dataset>/reward` (mean reward, a missing reward
+counted as 0, skipped when rewards are dicts) and `<dataset>/truncated_ratio`. These
+versions are placeholders without weights, tagged `weights: not saved`. MLflow also
+logs the two scores as run metrics under the same keys, and re-running a step adds its
+traces to the existing version.
+
+A small fixed probe set, decoded greedily, makes the traces comparable across steps:
+
+```bash
+--eval-interval 2 \
+--eval-prompt-data probe /path/gsm8k/test.parquet@[0:16] \
+--eval-temperature 0 \
+--custom-eval-rollout-log-function-path miles.utils.tracking_utils.checkpoint_traces.log_eval_traces \
+--checkpoint-traces-dir /path/run/traces
+```
+
+- Greedy decoding alone may not make answers bit-identical across evals: concurrent
+  batching can flip near-tie tokens. In one run with 16 prompts and no intended weight
+  change, the number of correct answers varied between 2 and 4. Add
+  `--sglang-enable-deterministic-inference` for probe runs if the engine supports it;
+  otherwise treat small differences as noise.
+- A probe is only useful if answers finish. Watch `eval/<dataset>-truncated_ratio` and
+  raise `--eval-max-response-len` until it is near zero; thinking models need far more
+  than 512 tokens. Disabling thinking via `--apply-chat-template-kwargs` also changes
+  training.
+
+This complements `--dump-details`, which saves full rollouts for debugging. The traces
+keep only readable text and scores, never token ids or log-probs.
+
 ---
 
 ## Model
